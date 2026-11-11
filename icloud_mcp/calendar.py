@@ -39,21 +39,46 @@ class CalendarClient:
             self._principal = client.principal()
         return self._principal
 
-    def _find_calendar(self, name: str | None) -> caldav.Calendar:
+    @staticmethod
+    def _display_name(c: caldav.Calendar) -> str:
+        try:
+            return c.get_display_name() or ""
+        except Exception:
+            return c.name or ""
+
+    @staticmethod
+    def _supports(c: caldav.Calendar, component: str) -> bool:
+        try:
+            return component in (c.get_supported_components() or [])
+        except Exception:
+            return True  # assume usable if the server won't say
+
+    def _find_calendar(self, name: str | None, component: str = "VEVENT") -> caldav.Calendar:
         cals = self._principal_obj().calendars()
         if not cals:
             raise ValueError("no calendars found for this account")
-        if not name:
-            return cals[0]
+        if name:
+            for c in cals:
+                if self._display_name(c).casefold() == name.casefold():
+                    return c
+            raise ValueError(
+                f"calendar {name!r} not found; have: " + ", ".join(self._display_name(c) for c in cals)
+            )
+        # No name: default to the first calendar that holds this component type
+        # (skips e.g. the VTODO "Reminders" list when creating an event).
         for c in cals:
-            if (c.name or "").casefold() == name.casefold():
+            if self._supports(c, component):
                 return c
-        raise ValueError(f"calendar {name!r} not found; have: " + ", ".join(c.name or "?" for c in cals))
+        return cals[0]
 
     def list_calendars(self) -> list[dict[str, Any]]:
         out = []
         for c in self._principal_obj().calendars():
-            out.append({"name": c.name, "url": str(c.url)})
+            try:
+                comps = c.get_supported_components() or []
+            except Exception:
+                comps = []
+            out.append({"name": self._display_name(c), "url": str(c.url), "components": comps})
         return out
 
     def create_event(

@@ -17,7 +17,7 @@ class MailClient:
 
     def _box(self) -> MailBox:
         return MailBox(self._cfg.imap_host, port=self._cfg.imap_port).login(
-            self._cfg.apple_id, self._cfg.apple_pw
+            self._cfg.imap_email, self._cfg.apple_pw
         )
 
     def list_folders(self) -> list[str]:
@@ -84,7 +84,7 @@ class MailClient:
 
     def send(self, to: list[str], subject: str, body: str, *, cc: list[str] | None = None) -> dict[str, Any]:
         msg = EmailMessage()
-        msg["From"] = self._cfg.apple_id
+        msg["From"] = self._cfg.mail_from
         msg["To"] = ", ".join(to)
         if cc:
             msg["Cc"] = ", ".join(cc)
@@ -94,6 +94,6 @@ class MailClient:
         recipients = list(to) + list(cc or [])
         with smtplib.SMTP(self._cfg.smtp_host, self._cfg.smtp_port) as s:
             s.starttls()
-            s.login(self._cfg.apple_id, self._cfg.apple_pw)
+            s.login(self._cfg.imap_email, self._cfg.apple_pw)
             s.send_message(msg, to_addrs=recipients)
         return {"sent": True, "to": recipients, "subject": subject}
