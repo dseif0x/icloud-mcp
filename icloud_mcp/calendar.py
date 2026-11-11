@@ -150,6 +150,28 @@ class CalendarClient:
         out.sort(key=lambda e: e["start"] or "")
         return out
 
+    def list_todos(
+        self, *, calendar: str | None = None, include_completed: bool = False, limit: int = 200
+    ) -> dict[str, Any]:
+        """Read-only: list the VTODO items (reminders) in a task list."""
+        cal_obj = self._find_calendar(calendar, component="VTODO")
+        items = []
+        for t in cal_obj.todos(include_completed=include_completed):
+            vt = t.icalendar_component
+            items.append({
+                "uid": str(vt.get("uid", "")),
+                "summary": str(vt.get("summary", "")),
+                "status": str(vt.get("status", "")),
+                "due": _ical_value(vt.get("due")),
+                "completed": _ical_value(vt.get("completed")),
+                "priority": str(vt.get("priority", "")),
+                "created": _ical_value(vt.get("created")),
+                "description": str(vt.get("description", ""))[:500],
+            })
+            if len(items) >= limit:
+                break
+        return {"list": self._display_name(cal_obj), "count": len(items), "items": items}
+
     def delete_event(self, uid: str, *, calendar: str | None = None) -> dict[str, Any]:
         cal_obj = self._find_calendar(calendar)
         ev = cal_obj.event_by_uid(uid)

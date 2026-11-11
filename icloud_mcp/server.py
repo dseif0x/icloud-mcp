@@ -82,6 +82,15 @@ def build(cfg: Config) -> FastMCP:
             """Delete an event by its UID."""
             return cal.delete_event(uid, calendar=calendar)
 
+    # ---- Reminders (read-only) ----------------------------------------
+    if enabled("rem_list"):
+        @mcp.tool()
+        def rem_list(list_name: str | None = None, include_completed: bool = False, limit: int = 200) -> dict:
+            """Read-only: list reminders (VTODO items) in a task list. Omit
+            `list_name` for the first task list. Note: upgraded iCloud Reminders
+            lists are usually not exposed over CalDAV."""
+            return cal.list_todos(calendar=list_name, include_completed=include_completed, limit=limit)
+
     # ---- Mail -----------------------------------------------------------
     if enabled("mail_list_folders"):
         @mcp.tool()
