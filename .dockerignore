@@ -1,0 +1,6 @@
+.deps/
+.venv/
+.git/
+__pycache__/
+deploy/
+*.md

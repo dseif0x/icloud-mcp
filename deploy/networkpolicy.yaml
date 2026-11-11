@@ -1,0 +1,34 @@
+# Network policies for the icloud-mcp server. Adjust the ingress source to match
+# the namespace/labels your agent sessions run in.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: icloud-mcp
+  namespace: mcp
+spec:
+  podSelector:
+    matchLabels: { app: icloud-mcp }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Allow MCP clients (agent sessions) to reach the server.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              # TODO: set to the label of the namespace agent sessions run in,
+              # e.g. kubernetes.io/metadata.name: agents-operator
+              kubernetes.io/metadata.name: agents-operator
+      ports:
+        - { protocol: TCP, port: 8080 }
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # Apple: CalDAV (443), IMAP (993), SMTP submission (587)
+    - ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 993 }
+        - { protocol: TCP, port: 587 }
