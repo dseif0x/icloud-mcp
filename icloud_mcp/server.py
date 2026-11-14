@@ -76,6 +76,30 @@ def build(cfg: Config) -> FastMCP:
             (or the default one)."""
             return cal.list_events(start, end, calendar=calendar)
 
+    if enabled("cal_update_event"):
+        @mcp.tool()
+        def cal_update_event(
+            uid: str,
+            calendar: str | None = None,
+            summary: str | None = None,
+            start: str | None = None,
+            end: str | None = None,
+            location: str | None = None,
+            description: str | None = None,
+        ) -> dict:
+            """Change an existing event in place (by UID, as listed by
+            cal_list_events). Only the fields you pass change; attendees,
+            organizer, alarms and everything else stay, so a shared event keeps
+            its invitees (they get the update). `start`/`end` are ISO-8601 with
+            an offset (e.g. 2027-09-24T23:59:00-10:00); a time stays in the
+            event's own time zone. Changing `start` does NOT move `end` - pass
+            both to move an event. An empty string clears summary/location/
+            description. Recurring events: changes apply to the whole series."""
+            return cal.update_event(
+                uid, calendar=calendar, summary=summary, start=start, end=end,
+                location=location, description=description,
+            )
+
     if enabled("cal_delete_event"):
         @mcp.tool()
         def cal_delete_event(uid: str, calendar: str | None = None) -> dict:

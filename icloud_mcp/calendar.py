@@ -146,6 +146,8 @@ class CalendarClient:
                 "start": _ical_value(vev.get("dtstart")),
                 "end": _ical_value(vev.get("dtend")),
                 "location": str(vev.get("location", "")),
+                "organizer": _person(vev.get("organizer")),
+                "attendees": _attendees(vev),
             })
         out.sort(key=lambda e: e["start"] or "")
         return out
@@ -172,6 +174,78 @@ class CalendarClient:
                 break
         return {"list": self._display_name(cal_obj), "count": len(items), "items": items}
 
+    def update_event(
+        self,
+        uid: str,
+        *,
+        calendar: str | None = None,
+        summary: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        location: str | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Change fields of an existing event in place. Only the fields given
+        change; everything else on the VEVENT stays as it is - attendees and
+        organizer (shared events keep their invitees), alarms, Apple's X-
+        properties, recurrence. The event is written back to the same
+        resource (no delete + re-create), with SEQUENCE bumped so invitees'
+        calendars take the update."""
+        cal_obj = self._find_calendar(calendar)
+        res = cal_obj.event_by_uid(uid)
+        ical = Calendar.from_ical(res.data)
+        vevents = [c for c in ical.walk("VEVENT") if str(c.get("uid", "")) == uid]
+        # A recurring event can carry overrides (RECURRENCE-ID); edit the master.
+        master = next((v for v in vevents if v.get("recurrence-id") is None), None)
+        if master is None:
+            raise ValueError(f"event {uid!r} has no master VEVENT")
+
+        changed: list[str] = []
+        if summary is not None:
+            _set(master, "summary", summary); changed.append("summary")
+        if location is not None:
+            _set(master, "location", location); changed.append("location")
+        if description is not None:
+            _set(master, "description", description); changed.append("description")
+        for name, value in (("dtstart", start), ("dtend", end)):
+            if value is None:
+                continue
+            old = master.get(name)
+            master.pop(name, None)
+            master.add(name, _like(old, value))
+            changed.append(name)
+        if not changed:
+            raise ValueError("nothing to change: pass at least one field")
+        if "dtend" in changed or "dtstart" in changed:
+            s_ = master.get("dtstart").dt
+            e_ = master.get("dtend").dt if master.get("dtend") is not None else None
+            if e_ is not None and _as_utc(e_) < _as_utc(s_):
+                raise ValueError(f"end {e_.isoformat()} is before start {s_.isoformat()}")
+            # DURATION and DTEND are exclusive; DTEND wins when we set it.
+            if "dtend" in changed:
+                master.pop("duration", None)
+
+        seq = int(master.get("sequence", 0)) + 1
+        master.pop("sequence", None)
+        master.add("sequence", seq)
+        now = dt.datetime.now(dt.timezone.utc)
+        for name in ("dtstamp", "last-modified"):
+            master.pop(name, None)
+            master.add(name, now)
+
+        res.data = ical.to_ical()
+        res.save()
+        return {
+            "uid": uid,
+            "calendar": self._display_name(cal_obj),
+            "changed": changed,
+            "summary": str(master.get("summary", "")),
+            "start": _ical_value(master.get("dtstart")),
+            "end": _ical_value(master.get("dtend")),
+            "sequence": seq,
+            "attendees": _attendees(master),
+        }
+
     def delete_event(self, uid: str, *, calendar: str | None = None) -> dict[str, Any]:
         cal_obj = self._find_calendar(calendar)
         ev = cal_obj.event_by_uid(uid)
@@ -186,3 +260,63 @@ def _ical_value(prop: Any) -> str:
     if isinstance(v, (dt.datetime, dt.date)):
         return v.isoformat()
     return str(v)
+
+
+def _person(prop: Any) -> str:
+    if prop is None:
+        return ""
+    name = prop.params.get("CN", "") if hasattr(prop, "params") else ""
+    addr = str(prop).removeprefix("mailto:").removeprefix("MAILTO:")
+    return f"{name} <{addr}>" if name else addr
+
+
+def _attendees(vev: Any) -> list[dict[str, str]]:
+    raw = vev.get("attendee")
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raw = [raw]
+    out = []
+    for a in raw:
+        params = getattr(a, "params", {})
+        out.append({
+            "who": _person(a),
+            "status": str(params.get("PARTSTAT", "")),
+        })
+    return out
+
+
+def _set(vev: Any, name: str, value: str) -> None:
+    vev.pop(name, None)
+    if value != "":
+        vev.add(name, value)
+
+
+def _as_utc(v: dt.date | dt.datetime) -> dt.datetime:
+    if not isinstance(v, dt.datetime):
+        return dt.datetime(v.year, v.month, v.day, tzinfo=dt.timezone.utc)
+    if v.tzinfo is None:
+        return v.replace(tzinfo=dt.timezone.utc)
+    return v.astimezone(dt.timezone.utc)
+
+
+def _like(old: Any, value: str) -> dt.date | dt.datetime:
+    """The new DTSTART/DTEND value, shaped like the old one: an all-day
+    (date) value stays a date; a time in a named zone (e.g. TZID=Pacific/
+    Tahiti) stays in that zone - converted when the new value carries an
+    offset, taken as wall-clock time in that zone when it doesn't. Other
+    aware values go in as UTC (a fixed offset like -10:00 has no TZID that
+    calendar apps understand)."""
+    new = _parse_dt(value)
+    old_v = getattr(old, "dt", None)
+    if old_v is not None and not isinstance(old_v, dt.datetime):
+        return new.date()
+    old_tz = old_v.tzinfo if isinstance(old_v, dt.datetime) else None
+    named = old_tz is not None and bool(getattr(old_tz, "key", None) or getattr(old_tz, "zone", None))
+    if new.tzinfo is None:
+        if named:
+            return new.replace(tzinfo=old_tz)
+        return new
+    if named:
+        return new.astimezone(old_tz)
+    return new.astimezone(dt.timezone.utc)
