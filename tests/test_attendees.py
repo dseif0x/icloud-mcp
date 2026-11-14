@@ -100,6 +100,13 @@ for name, others in (("Nobody", [FakeRes(SHARED)]), ("e", [FakeRes(SHARED)])):
     except ValueError as e:
         print("refused:", e)
 
+# 4b) same person as principal path and as mailto: is one match (principal wins)
+DUP = SHARED.replace(b"ATTENDEE;CN=Daniel Seifert;PARTSTAT=ACCEPTED;ROLE=CHAIR", b"ATTENDEE;CN=Lea Machain;PARTSTAT=ACCEPTED:mailto:lea@example.com\r\nATTENDEE;CN=Daniel Seifert;PARTSTAT=ACCEPTED;ROLE=CHAIR")
+res4 = FakeRes(PLAIN)
+client(FakeCal(res4, [FakeRes(DUP)])).update_event("elfi", add_attendees=["Lea"])
+ev4 = Calendar.from_ical(res4.data).walk("VEVENT")[0]
+assert LEA in {str(a) for a in ev4["attendee"]}, res4.data
+
 # 5) create_event with attendees
 cal5 = FakeCal(None, [FakeRes(SHARED)])
 out5 = client(cal5).create_event("Test", "2027-01-16T11:00:00Z", "2027-01-16T12:00:00Z", calendar="Privat", attendees=["Lea"])

@@ -241,13 +241,22 @@ class CalendarClient:
         if "known" not in cache:
             cache["known"] = self._known_attendees(cal_obj)
         key = who.casefold()
-        matches = {}
+        # One entry per person: the same person shows up under iCloud's
+        # principal path and as mailto: with the same email - keep one,
+        # preferring the principal path (what Apple's apps write).
+        matches: dict[str, Any] = {}
         for p in cache["known"]:
             cn = str(p.params.get("CN", "")) if hasattr(p, "params") else ""
             email = str(p.params.get("EMAIL", "")) if hasattr(p, "params") else ""
+            if not email and str(p).lower().startswith("mailto:"):
+                email = str(p)[7:]
             hay = f"{cn} {email} {p}".casefold()
-            if key in hay:
-                matches[str(p)] = p
+            if key not in hay:
+                continue
+            person = email.casefold() or str(p).casefold()
+            prev = matches.get(person)
+            if prev is None or (str(p).startswith("/") and not str(prev).startswith("/")):
+                matches[person] = p
         if len(matches) == 1:
             p = next(iter(matches.values()))
             a = vCalAddress(str(p))
