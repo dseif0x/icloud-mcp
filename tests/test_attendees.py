@@ -107,6 +107,20 @@ client(FakeCal(res4, [FakeRes(DUP)])).update_event("elfi", add_attendees=["Lea"]
 ev4 = Calendar.from_ical(res4.data).walk("VEVENT")[0]
 assert LEA in {str(a) for a in ev4["attendee"]}, res4.data
 
+# 4c) iCloud lists the owner address as a full https URL next to the login
+# principal; the organizer must be the "/a.../principal/" path, never the login one
+class UrlPrincipal(FakePrincipal):
+    class url:
+        path = "/593427307/principal"
+    def calendar_user_address_set(self):
+        return ["https://p41-caldav.icloud.com:443" + DAN, "mailto:dan@seifert.id", "https://p41-caldav.icloud.com:443/593427307/principal/"]
+res4c = FakeRes(PLAIN)
+c4c = client(FakeCal(res4c, []))
+c4c._principal_obj = lambda: UrlPrincipal()
+c4c.update_event("elfi", add_attendees=["max@example.org"])
+ev4c = Calendar.from_ical(res4c.data).walk("VEVENT")[0]
+assert str(ev4c["organizer"]) == DAN, ev4c["organizer"]
+
 # 5) create_event with attendees
 cal5 = FakeCal(None, [FakeRes(SHARED)])
 out5 = client(cal5).create_event("Test", "2027-01-16T11:00:00Z", "2027-01-16T12:00:00Z", calendar="Privat", attendees=["Lea"])

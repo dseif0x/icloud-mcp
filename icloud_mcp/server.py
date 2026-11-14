@@ -112,6 +112,13 @@ def build(cfg: Config) -> FastMCP:
                 add_attendees=add_attendees, remove_attendees=remove_attendees,
             )
 
+    if enabled("cal_whoami"):
+        @mcp.tool()
+        def cal_whoami(calendar: str | None = None) -> dict:
+            """Read-only: the account's calendar-user addresses and the
+            organizer address used when inviting people."""
+            return cal.whoami(calendar)
+
     if enabled("cal_get_event"):
         @mcp.tool()
         def cal_get_event(uid: str, calendar: str | None = None) -> dict:

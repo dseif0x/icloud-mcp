@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from urllib.parse import urlparse
 from typing import Any
 
 import caldav
@@ -70,6 +71,18 @@ class CalendarClient:
             if self._supports(c, component):
                 return c
         return cals[0]
+
+    def whoami(self, calendar: str | None = None) -> dict[str, Any]:
+        """Read-only: the account's calendar-user addresses as the server
+        reports them, and the organizer address invitations would use."""
+        principal = self._principal_obj()
+        try:
+            addrs = [str(a) for a in principal.calendar_user_address_set()]
+        except Exception as e:
+            addrs = [f"error: {e}"]
+        org, name, email = self._owner_address(self._find_calendar(calendar))
+        return {"login_principal": str(principal.url), "calendar_user_addresses": addrs,
+                "organizer_address": org, "name": name, "email": email}
 
     def list_calendars(self) -> list[dict[str, Any]]:
         out = []
@@ -179,29 +192,51 @@ class CalendarClient:
         return {"list": self._display_name(cal_obj), "count": len(items), "items": items}
 
     # ---- attendees -----------------------------------------------------
-    def _owner_address(self) -> tuple[str, str, str]:
-        """The account's own calendar-user address (as iCloud writes it into
-        ORGANIZER/ATTENDEE: its principal path), display name and email."""
+    def _owner_address(self, cal_obj: caldav.Calendar | None = None) -> tuple[str, str, str]:
+        """The account's own calendar-user address as iCloud's apps write it
+        into ORGANIZER (its "/a.../principal/" path), display name and email.
+
+        iCloud lists that address in calendar-user-address-set as a full
+        https:// URL; only its path is what Apple writes. The CalDAV login
+        principal ("/<dsid>/principal") is NOT accepted as the organizer:
+        an event organized by it gets no invitations sent. So: prefer the
+        address the account already appears under as ORGANIZER on its own
+        events, then a path from the address set, never the login path."""
         principal = self._principal_obj()
         addrs: list[str] = []
         try:
             addrs = [str(a) for a in principal.calendar_user_address_set()]
         except Exception:
             pass
-        path = next((a for a in addrs if a.startswith("/")), None)
-        if path is None:
-            path = str(principal.url.path) if getattr(principal, "url", None) else ""
+        email = next((a[7:] for a in addrs if a.lower().startswith("mailto:")), "")
+        paths = []
+        for a in addrs:
+            if a.lower().startswith(("http://", "https://")):
+                a = urlparse(a).path
+            if a.startswith("/") and a not in paths:
+                paths.append(a)
+        login = str(principal.url.path).rstrip("/") if getattr(principal, "url", None) else ""
+        paths = [p for p in paths if p.rstrip("/") != login] or paths
+        path = ""
+        if cal_obj is not None:
+            emails = {e.casefold() for e in [email] if e}
+            for p in self._known_attendees(cal_obj, organizers_only=True):
+                pe = str(p.params.get("EMAIL", "")).casefold() if hasattr(p, "params") else ""
+                if str(p) in paths or (pe and pe in emails):
+                    path = str(p)
+                    break
+        if not path and paths:
+            path = paths[0]
         if not path:
-            path = next((a for a in addrs if a.lower().startswith("mailto:")), "")
+            path = "mailto:" + email if email else ""
         name = ""
         try:
             name = principal.get_display_name() or ""
         except Exception:
             pass
-        email = next((a[7:] for a in addrs if a.lower().startswith("mailto:")), "")
         return path, name, email
 
-    def _known_attendees(self, cal_obj: caldav.Calendar) -> list[Any]:
+    def _known_attendees(self, cal_obj: caldav.Calendar, organizers_only: bool = False) -> list[Any]:
         """ATTENDEE/ORGANIZER properties seen on events of this calendar
         (two years back, two ahead), to resolve a bare name like "Lea"."""
         now = dt.datetime.now(dt.timezone.utc)
@@ -213,7 +248,7 @@ class CalendarClient:
             return seen
         for r in results:
             for comp in r.icalendar_instance.walk("VEVENT"):
-                props = comp.get("attendee") or []
+                props = [] if organizers_only else (comp.get("attendee") or [])
                 if not isinstance(props, list):
                     props = [props]
                 if comp.get("organizer") is not None:
@@ -281,7 +316,7 @@ class CalendarClient:
         have = {str(a).casefold() for a in existing}
         have |= {str(a.params.get("EMAIL", "")).casefold() for a in existing if hasattr(a, "params")}
         if vev.get("organizer") is None:
-            owner, owner_name, owner_email = self._owner_address()
+            owner, owner_name, owner_email = self._owner_address(cal_obj)
             if owner:
                 org = vCalAddress(owner)
                 if owner_name:
