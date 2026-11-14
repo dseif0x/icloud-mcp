@@ -59,14 +59,19 @@ def build(cfg: Config) -> FastMCP:
             description: str = "",
             location: str = "",
             reminders_minutes: list[int] | None = None,
+            attendees: list[str] | None = None,
         ) -> dict:
             """Create a calendar event. `start`/`end` are ISO-8601 (e.g.
             2026-11-20T14:00:00+01:00) or a bare date for all-day. Omit `end` to
             default to +1h (or the whole day when all_day). `reminders_minutes`
-            adds alerts that many minutes before. Omit `calendar` for the default."""
+            adds alerts that many minutes before. Omit `calendar` for the default.
+            `attendees` invites people (iCloud sends the invitations): an email,
+            "Name <email>", or a name already on another event's attendee list
+            (e.g. "Lea")."""
             return cal.create_event(
                 summary, start, end, calendar=calendar, all_day=all_day,
                 description=description, location=location, reminders_minutes=reminders_minutes,
+                attendees=attendees,
             )
 
     if enabled("cal_list_events"):
@@ -86,6 +91,8 @@ def build(cfg: Config) -> FastMCP:
             end: str | None = None,
             location: str | None = None,
             description: str | None = None,
+            add_attendees: list[str] | None = None,
+            remove_attendees: list[str] | None = None,
         ) -> dict:
             """Change an existing event in place (by UID, as listed by
             cal_list_events). Only the fields you pass change; attendees,
@@ -94,10 +101,15 @@ def build(cfg: Config) -> FastMCP:
             an offset (e.g. 2027-09-24T23:59:00-10:00); a time stays in the
             event's own time zone. Changing `start` does NOT move `end` - pass
             both to move an event. An empty string clears summary/location/
-            description. Recurring events: changes apply to the whole series."""
+            description. Recurring events: changes apply to the whole series.
+            `add_attendees` invites people (iCloud sends the invitations; you
+            become organizer if the event has none): an email, "Name <email>",
+            or a name already on another event's attendee list (e.g. "Lea").
+            `remove_attendees` drops attendees matching a name or email."""
             return cal.update_event(
                 uid, calendar=calendar, summary=summary, start=start, end=end,
                 location=location, description=description,
+                add_attendees=add_attendees, remove_attendees=remove_attendees,
             )
 
     if enabled("cal_delete_event"):
