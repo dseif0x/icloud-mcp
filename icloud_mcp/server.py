@@ -112,6 +112,15 @@ def build(cfg: Config) -> FastMCP:
                 add_attendees=add_attendees, remove_attendees=remove_attendees,
             )
 
+    if enabled("cal_get_event"):
+        @mcp.tool()
+        def cal_get_event(uid: str, calendar: str | None = None) -> dict:
+            """Read-only: an event's raw iCalendar (ICS) data as stored on the
+            server, by UID, plus its URL. Writes nothing - for inspecting
+            exactly what an event contains (attendee parameters, organizer,
+            alarms, Apple's X- properties)."""
+            return cal.get_event(uid, calendar=calendar)
+
     if enabled("cal_delete_event"):
         @mcp.tool()
         def cal_delete_event(uid: str, calendar: str | None = None) -> dict:

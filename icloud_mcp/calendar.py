@@ -395,6 +395,16 @@ class CalendarClient:
             "attendees": _attendees(master),
         }
 
+    def get_event(self, uid: str, *, calendar: str | None = None) -> dict[str, Any]:
+        """Read-only: the event's raw iCalendar data as stored on the server,
+        plus its resource URL. Nothing is written."""
+        cal_obj = self._find_calendar(calendar)
+        res = cal_obj.event_by_uid(uid)
+        data = res.data
+        if isinstance(data, bytes):
+            data = data.decode("utf-8", "replace")
+        return {"uid": uid, "calendar": self._display_name(cal_obj), "url": str(res.url), "ics": data}
+
     def delete_event(self, uid: str, *, calendar: str | None = None) -> dict[str, Any]:
         cal_obj = self._find_calendar(calendar)
         ev = cal_obj.event_by_uid(uid)

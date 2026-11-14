@@ -19,6 +19,7 @@ place and clients only hold the server URL + token.
 | `cal_create_event` | Create an event (ISO times or all-day, optional reminders, optional attendees) |
 | `cal_list_events` | List events in a time range (with organizer and attendees) |
 | `cal_update_event` | Change fields of an event in place by UID; attendees, alarms etc. stay (shared events keep their invitees); `add_attendees` / `remove_attendees` invite or drop people |
+| `cal_get_event` | Read-only: an event's raw iCalendar data (ICS) and URL |
 | `cal_delete_event` | Delete an event by UID |
 | `mail_list_folders` | List IMAP folders |
 | `mail_search` | Search a folder (unseen / since / from / subject / text) |
