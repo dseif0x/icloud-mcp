@@ -13,6 +13,13 @@ class Config:
     bearer_token: str
     imap_email: str = ""   # IMAP/SMTP username — iCloud wants the @icloud.com address
     mail_from: str = ""    # From address for sending (defaults to imap_email)
+    # Other From addresses mail_send may use: aliases / custom-domain addresses
+    # configured on the iCloud account (iCloud's SMTP rejects anything else).
+    mail_from_aliases: tuple[str, ...] = ()
+    # Uploaded attachments (POST /attachments): kept in memory this long, and
+    # at most this many bytes in total.
+    attachment_ttl_seconds: int = 3600
+    attachment_max_bytes: int = 20 * 1024 * 1024
     caldav_url: str = "https://caldav.icloud.com"
     imap_host: str = "imap.mail.me.com"
     imap_port: int = 993
@@ -43,6 +50,11 @@ class Config:
             bearer_token=req("MCP_BEARER_TOKEN"),
             imap_email=imap_email,
             mail_from=os.environ.get("MAIL_FROM", "").strip() or imap_email,
+            mail_from_aliases=tuple(
+                a.strip().lower() for a in os.environ.get("MAIL_FROM_ALIASES", "").split(",") if a.strip()
+            ),
+            attachment_ttl_seconds=int(os.environ.get("ATTACHMENT_TTL_SECONDS", "3600")),
+            attachment_max_bytes=int(os.environ.get("ATTACHMENT_MAX_BYTES", str(20 * 1024 * 1024))),
             caldav_url=os.environ.get("CALDAV_URL", "https://caldav.icloud.com"),
             imap_host=os.environ.get("IMAP_HOST", "imap.mail.me.com"),
             imap_port=int(os.environ.get("IMAP_PORT", "993")),

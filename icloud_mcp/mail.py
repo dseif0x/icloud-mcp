@@ -82,18 +82,41 @@ class MailClient:
                 }
         raise ValueError(f"message uid {uid} not found in {folder}")
 
-    def send(self, to: list[str], subject: str, body: str, *, cc: list[str] | None = None) -> dict[str, Any]:
+    def allowed_from(self) -> list[str]:
+        """The From addresses send() accepts: MAIL_FROM plus MAIL_FROM_ALIASES."""
+        seen: list[str] = []
+        for a in (self._cfg.mail_from, *self._cfg.mail_from_aliases):
+            if a and a.lower() not in [s.lower() for s in seen]:
+                seen.append(a)
+        return seen
+
+    def send(self, to: list[str], subject: str, body: str, *, cc: list[str] | None = None,
+             from_address: str | None = None,
+             attachments: list[tuple[str, str, bytes]] | None = None) -> dict[str, Any]:
+        """Sends a plain-text mail. from_address must be MAIL_FROM or one of
+        MAIL_FROM_ALIASES; attachments are (filename, content type, data)."""
+        sender = self._cfg.mail_from
+        if from_address:
+            allowed = {a.lower(): a for a in self.allowed_from()}
+            if from_address.strip().lower() not in allowed:
+                raise ValueError(f"from_address must be one of: {', '.join(self.allowed_from())}")
+            sender = from_address.strip()
         msg = EmailMessage()
-        msg["From"] = self._cfg.mail_from
+        msg["From"] = sender
         msg["To"] = ", ".join(to)
         if cc:
             msg["Cc"] = ", ".join(cc)
         msg["Subject"] = subject
         msg.set_content(body)
+        for filename, ctype, data in attachments or []:
+            maintype, _, subtype = (ctype or "application/octet-stream").partition("/")
+            msg.add_attachment(data, maintype=maintype or "application", subtype=subtype or "octet-stream",
+                               filename=filename)
 
         recipients = list(to) + list(cc or [])
         with smtplib.SMTP(self._cfg.smtp_host, self._cfg.smtp_port) as s:
             s.starttls()
             s.login(self._cfg.imap_email, self._cfg.apple_pw)
             s.send_message(msg, to_addrs=recipients)
-        return {"sent": True, "to": recipients, "subject": subject}
+        return {"sent": True, "from": sender, "to": recipients, "subject": subject,
+                "attachments": [f for f, _, _ in attachments or []]}
