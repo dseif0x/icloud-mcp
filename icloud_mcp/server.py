@@ -188,7 +188,8 @@ def build(cfg: Config, store: AttachmentStore | None = None) -> FastMCP:
             `curl -H "Authorization: Bearer <token>" -H "Content-Type: <mime type>"
             --data-binary @<file> "http://icloud-mcp.mcp:8080/attachments?filename=<name>"`
             (the response's "id"). Uploads expire after an hour and are deleted
-            once sent."""
+            once sent. A copy is saved to the Sent folder; the result has the
+            Message-ID and "saved_to_sent" (the folder, or null with "sent_copy_error")."""
             ids = list(attachment_ids or [])
             files = []
             for aid in ids:
