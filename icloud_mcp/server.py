@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
 
+from .attachments import AttachmentStore
 from .calendar import CalendarClient
 from .config import Config
 from .mail import MailClient
@@ -35,10 +36,11 @@ class BearerAuth(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def build(cfg: Config) -> FastMCP:
+def build(cfg: Config, store: AttachmentStore | None = None) -> FastMCP:
     mcp = FastMCP("icloud", host=cfg.host, port=cfg.port)
     cal = CalendarClient(cfg)
     mail = MailClient(cfg)
+    store = store or AttachmentStore(cfg.attachment_ttl_seconds, cfg.attachment_max_bytes)
     enabled = lambda name: name not in cfg.disabled_tools  # noqa: E731
 
     # ---- Calendar -------------------------------------------------------
@@ -176,11 +178,58 @@ def build(cfg: Config) -> FastMCP:
 
     if enabled("mail_send"):
         @mcp.tool()
-        def mail_send(to: list[str], subject: str, body: str, cc: list[str] | None = None) -> dict:
-            """Send a plain-text email from the account."""
-            return mail.send(to, subject, body, cc=cc)
+        def mail_send(to: list[str], subject: str, body: str, cc: list[str] | None = None,
+                      from_address: str | None = None, attachment_ids: list[str] | None = None) -> dict:
+            """Send a plain-text email from the account.
+
+            from_address: optional sender; must be the account's default address or
+            one of its configured aliases (an error lists the allowed ones).
+            attachment_ids: files uploaded beforehand with
+            `curl -H "Authorization: Bearer <token>" -H "Content-Type: <mime type>"
+            --data-binary @<file> "http://icloud-mcp.mcp:8080/attachments?filename=<name>"`
+            (the response's "id"). Uploads expire after an hour and are deleted
+            once sent."""
+            ids = list(attachment_ids or [])
+            files = []
+            for aid in ids:
+                a = store.get(aid)
+                files.append((a.filename, a.content_type, a.data))
+            result = mail.send(to, subject, body, cc=cc, from_address=from_address, attachments=files)
+            for aid in ids:
+                store.pop(aid)
+            return result
+
+        @mcp.tool()
+        def mail_senders() -> dict:
+            """The From addresses mail_send accepts (default first)."""
+            return {"default": cfg.mail_from, "allowed": mail.allowed_from()}
+
+    mcp._icloud_store = store  # the HTTP upload route uses the same store
 
     return mcp
+
+
+def add_upload_route(app, cfg: Config, store: AttachmentStore) -> None:
+    """POST /attachments (behind BearerAuth like /mcp): stores the raw request
+    body as a mail attachment for mail_send(attachment_ids=...); the file name
+    comes from ?filename=, the type from Content-Type."""
+
+    async def upload(req: Request):
+        limit = cfg.attachment_max_bytes
+        if int(req.headers.get("content-length") or 0) > limit:
+            return JSONResponse({"error": f"too large (max {limit} bytes)"}, status_code=413)
+        data = await req.body()
+        if len(data) > limit:
+            return JSONResponse({"error": f"too large (max {limit} bytes)"}, status_code=413)
+        try:
+            meta = store.put(req.query_params.get("filename", "attachment"),
+                             req.headers.get("content-type", "application/octet-stream"), data)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        log.info("attachment uploaded: %s (%d bytes)", meta["filename"], meta["size"])
+        return JSONResponse(meta)
+
+    app.add_route("/attachments", upload, methods=["POST"])
 
 
 def main() -> None:
@@ -195,6 +244,8 @@ def main() -> None:
         return PlainTextResponse("ok")
 
     app.add_route("/healthz", healthz, methods=["GET"])
+
+    add_upload_route(app, cfg, mcp._icloud_store)
 
     log.info("icloud-mcp listening on %s:%s (mcp at /mcp)", cfg.host, cfg.port)
     log.info("tools disabled: %s", ", ".join(cfg.disabled_tools) or "none")

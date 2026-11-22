@@ -24,7 +24,8 @@ place and clients only hold the server URL + token.
 | `mail_list_folders` | List IMAP folders |
 | `mail_search` | Search a folder (unseen / since / from / subject / text) |
 | `mail_get` | Fetch a full message (body + attachment list) |
-| `mail_send` | Send a plain-text email |
+| `mail_send` | Send a plain-text email; optional `from_address` (default or a configured alias) and `attachment_ids` (files uploaded to `POST /attachments`) |
+| `mail_senders` | The From addresses `mail_send` accepts |
 
 Disable any tool with `ICLOUD_MCP_DISABLED_TOOLS` (comma-separated), e.g.
 `ICLOUD_MCP_DISABLED_TOOLS=mail_send`.
@@ -39,6 +40,9 @@ Disable any tool with `ICLOUD_MCP_DISABLED_TOOLS` (comma-separated), e.g.
 | `CALDAV_URL` | no | `https://caldav.icloud.com` |
 | `IMAP_HOST` / `IMAP_PORT` | no | `imap.mail.me.com` / `993` |
 | `SMTP_HOST` / `SMTP_PORT` | no | `smtp.mail.me.com` / `587` |
+| `MAIL_FROM` | no | the IMAP address (default sender) |
+| `MAIL_FROM_ALIASES` | no | — (comma-separated extra senders: aliases / custom-domain addresses set up on the iCloud account; iCloud rejects others) |
+| `ATTACHMENT_TTL_SECONDS` / `ATTACHMENT_MAX_BYTES` | no | `3600` / `20971520` (uploaded attachments: lifetime, total size in memory) |
 | `ICLOUD_MCP_DISABLED_TOOLS` | no | — |
 | `HOST` / `PORT` | no | `0.0.0.0` / `8080` |
 
@@ -64,6 +68,14 @@ docker run -p 8080:8080 -e APPLE_ID=... -e APPLE_APP_PW=... -e MCP_BEARER_TOKEN=
 ## Endpoints
 
 - `POST /mcp` — Streamable HTTP MCP (requires `Authorization: Bearer <token>`)
+- `POST /attachments?filename=<name>` — upload a file for `mail_send` (same bearer
+  token; raw body, `Content-Type` = the file's type). Returns `{"id", "filename",
+  "size", "expires_in"}`; pass the id in `attachment_ids`. Uploads live in memory
+  only, expire after `ATTACHMENT_TTL_SECONDS` and are deleted once sent.
+  ```bash
+  curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/pdf" \
+       --data-binary @invoice.pdf "http://icloud-mcp.mcp:8080/attachments?filename=invoice.pdf"
+  ```
 - `GET /healthz` — unauthenticated liveness/readiness probe
 
 ## Client config
