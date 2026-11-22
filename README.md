@@ -24,7 +24,7 @@ place and clients only hold the server URL + token.
 | `mail_list_folders` | List IMAP folders |
 | `mail_search` | Search a folder (unseen / since / from / subject / text) |
 | `mail_get` | Fetch a full message (body + attachment list) |
-| `mail_send` | Send a plain-text email; optional `from_address` (default or a configured alias) and `attachment_ids` (files uploaded to `POST /attachments`) |
+| `mail_send` | Send a plain-text email (logged with its Message-ID; a copy goes to the Sent folder, like a mail client would store it); optional `from_address` (default or a configured alias) and `attachment_ids` (files uploaded to `POST /attachments`) |
 | `mail_senders` | The From addresses `mail_send` accepts |
 
 Disable any tool with `ICLOUD_MCP_DISABLED_TOOLS` (comma-separated), e.g.
@@ -42,6 +42,7 @@ Disable any tool with `ICLOUD_MCP_DISABLED_TOOLS` (comma-separated), e.g.
 | `SMTP_HOST` / `SMTP_PORT` | no | `smtp.mail.me.com` / `587` |
 | `MAIL_FROM` | no | the IMAP address (default sender) |
 | `MAIL_FROM_ALIASES` | no | — (comma-separated extra senders: aliases / custom-domain addresses set up on the iCloud account; iCloud rejects others) |
+| `SENT_FOLDER` | no | — (the folder flagged `\Sent`, iCloud: `Sent Messages`): where a copy of every sent mail is stored |
 | `ATTACHMENT_TTL_SECONDS` / `ATTACHMENT_MAX_BYTES` | no | `3600` / `20971520` (uploaded attachments: lifetime, total size in memory) |
 | `ICLOUD_MCP_DISABLED_TOOLS` | no | — |
 | `HOST` / `PORT` | no | `0.0.0.0` / `8080` |

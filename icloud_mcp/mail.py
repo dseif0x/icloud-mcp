@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import smtplib
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 from typing import Any
 
-from imap_tools import AND, MailBox
+from imap_tools import AND, MailBox, MailMessageFlags
 
 from .config import Config
+
+
+log = logging.getLogger("icloud-mcp.mail")
 
 
 class MailClient:
@@ -103,6 +108,8 @@ class MailClient:
             sender = from_address.strip()
         msg = EmailMessage()
         msg["From"] = sender
+        msg["Date"] = formatdate(localtime=False, usegmt=True)
+        msg["Message-ID"] = make_msgid(domain=sender.rsplit("@", 1)[-1] if "@" in sender else None)
         msg["To"] = ", ".join(to)
         if cc:
             msg["Cc"] = ", ".join(cc)
@@ -118,5 +125,35 @@ class MailClient:
             s.starttls()
             s.login(self._cfg.imap_email, self._cfg.apple_pw)
             s.send_message(msg, to_addrs=recipients)
-        return {"sent": True, "from": sender, "to": recipients, "subject": subject,
-                "attachments": [f for f, _, _ in attachments or []]}
+        names = [f for f, _, _ in attachments or []]
+        log.info("mail sent: message_id=%s from=%s to=%s subject=%r attachments=%s",
+                 msg["Message-ID"], sender, ",".join(recipients), subject, names)
+        # SMTP doesn't keep a copy: store one in the Sent folder like a mail
+        # client would. A failure here doesn't undo the (already sent) mail.
+        saved, err = None, None
+        try:
+            saved = self._save_sent(msg)
+            log.info("mail copy saved: message_id=%s folder=%r", msg["Message-ID"], saved)
+        except Exception as e:  # noqa: BLE001 - report, don't fail the send
+            err = str(e)
+            log.warning("mail copy NOT saved to Sent: message_id=%s error=%s", msg["Message-ID"], err)
+        out = {"sent": True, "message_id": msg["Message-ID"], "from": sender, "to": recipients,
+               "subject": subject, "attachments": names, "saved_to_sent": saved}
+        if err:
+            out["sent_copy_error"] = err
+        return out
+
+    def _sent_folder(self, mb: MailBox) -> str:
+        """SENT_FOLDER, else the folder flagged \\Sent (iCloud: "Sent Messages")."""
+        if self._cfg.sent_folder:
+            return self._cfg.sent_folder
+        for f in mb.folder.list():
+            if any(fl.lower() == "\\sent" for fl in f.flags):
+                return f.name
+        return "Sent Messages"
+
+    def _save_sent(self, msg: EmailMessage) -> str:
+        with self._box() as mb:
+            folder = self._sent_folder(mb)
+            mb.append(msg.as_bytes(), folder, dt=None, flag_set=(MailMessageFlags.SEEN,))
+            return folder

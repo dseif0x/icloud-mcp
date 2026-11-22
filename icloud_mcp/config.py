@@ -16,6 +16,8 @@ class Config:
     # Other From addresses mail_send may use: aliases / custom-domain addresses
     # configured on the iCloud account (iCloud's SMTP rejects anything else).
     mail_from_aliases: tuple[str, ...] = ()
+    # Folder sent mail is copied to ("" = the one flagged \\Sent, iCloud: "Sent Messages").
+    sent_folder: str = ""
     # Uploaded attachments (POST /attachments): kept in memory this long, and
     # at most this many bytes in total.
     attachment_ttl_seconds: int = 3600
@@ -53,6 +55,7 @@ class Config:
             mail_from_aliases=tuple(
                 a.strip().lower() for a in os.environ.get("MAIL_FROM_ALIASES", "").split(",") if a.strip()
             ),
+            sent_folder=os.environ.get("SENT_FOLDER", "").strip(),
             attachment_ttl_seconds=int(os.environ.get("ATTACHMENT_TTL_SECONDS", "3600")),
             attachment_max_bytes=int(os.environ.get("ATTACHMENT_MAX_BYTES", str(20 * 1024 * 1024))),
             caldav_url=os.environ.get("CALDAV_URL", "https://caldav.icloud.com"),
